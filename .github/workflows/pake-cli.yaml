@@ -210,26 +210,29 @@ jobs:
 
           git checkout -- src-tauri/Cargo.lock
 
-          # 생성된 실제 EXE 위치 확인용 로그 출력
-          Write-Host "=== Generated EXE Files ==="
-          Get-ChildItem -Path . -Recurse -Filter "*.exe" | Select-Object FullName
+          # 순수 포터블 .exe 파일만 output_portable 폴더로 수집
+          New-Item -ItemType Directory -Force -Path output_portable
+
+          # 빌드/인스톨러 폴더를 제외하고 실행 가능한 순수 .exe 탐색
+          $targetExes = Get-ChildItem -Path . -Recurse -Filter "*.exe" | Where-Object {
+            $_.FullName -notmatch 'bundle|nsis|deps|build|\.cargo|node_modules'
+          }
+
+          Write-Host "=== Found Portable EXE ==="
+          foreach ($file in $targetExes) {
+            Write-Host $file.FullName
+            Copy-Item -Path $file.FullName -Destination output_portable\ -Force
+          }
 
       # --- 아티팩트 업로드 영역 ---
 
-      # Windows 순수 무설치 단일 실행 파일만 추출 (인스톨러/MSI/Setup 제외)
+      # 수집된 단일 무설치 실행 파일 업로드
       - name: Upload Portable EXE (Windows)
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.name }}-Windows-Portable
-          path: |
-            *.exe
-            dist/*.exe
-            output/*.exe
-            src-tauri/target/release/*.exe
-            !src-tauri/target/release/build/**
-            !src-tauri/target/release/deps/**
-            !src-tauri/target/release/bundle/**
+          path: output_portable/*.exe
           retention-days: 3
           if-no-files-found: error
 
