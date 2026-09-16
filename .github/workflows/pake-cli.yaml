@@ -10,7 +10,7 @@ on:
       platform:
         description: "Platform"
         required: true
-        default: "macos-latest"
+        default: "windows-latest"
         type: choice
         options:
           - "windows-latest"
@@ -64,7 +64,7 @@ on:
         type: boolean
         default: false
       targets:
-        description: "Package formats (comma-separated: deb,appimage,rpm,zst)"
+        description: "Package formats (Linux only: deb,appimage,rpm,zst)"
         required: false
         default: "deb"
 
@@ -77,7 +77,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -97,7 +97,7 @@ jobs:
         uses: rui314/setup-mold@v1
 
       - name: Rust cache restore
-        uses: actions/cache/restore@v4.2.0
+        uses: actions/cache/restore@v4
         id: cache_store
         with:
           path: |
@@ -167,52 +167,54 @@ jobs:
         timeout-minutes: 25
         shell: pwsh
         run: |
-          $args = "${{ inputs.url }}", "--name", "${{ inputs.name }}"
+          $pakeArgs = @("${{ inputs.url }}", "--name", "${{ inputs.name }}")
 
           if ("${{ inputs.icon }}" -ne "") {
-            $args += "--icon", "${{ inputs.icon }}"
+            $pakeArgs += @("--icon", "${{ inputs.icon }}")
           }
 
           if ("${{ inputs.width }}" -ne "") {
-            $args += "--width", "${{ inputs.width }}"
+            $pakeArgs += @("--width", "${{ inputs.width }}")
           }
 
           if ("${{ inputs.height }}" -ne "") {
-            $args += "--height", "${{ inputs.height }}"
+            $pakeArgs += @("--height", "${{ inputs.height }}")
           }
 
           if ("${{ inputs.min_width }}" -ne "") {
-            $args += "--min-width", "${{ inputs.min_width }}"
+            $pakeArgs += @("--min-width", "${{ inputs.min_width }}")
           }
 
           if ("${{ inputs.min_height }}" -ne "") {
-            $args += "--min-height", "${{ inputs.min_height }}"
+            $pakeArgs += @("--min-height", "${{ inputs.min_height }}")
           }
 
           if ("${{ inputs.app_version }}" -ne "") {
-            $args += "--app-version", "${{ inputs.app_version }}"
+            $pakeArgs += @("--app-version", "${{ inputs.app_version }}")
           }
 
           if ("${{ inputs.fullscreen }}" -eq "true") {
-            $args += "--fullscreen"
+            $pakeArgs += "--fullscreen"
           }
 
           if ("${{ inputs.hide_title_bar }}" -eq "true") {
-            $args += "--hide-title-bar"
+            $pakeArgs += "--hide-title-bar"
           }
 
           if ("${{ inputs.new_window }}" -eq "true") {
-            $args += "--new-window"
+            $pakeArgs += "--new-window"
           }
 
-          Write-Host "Running: node dist/cli.js $($args -join ' ')"
-          node dist/cli.js $args
+          Write-Host "Running: node dist/cli.js $($pakeArgs -join ' ')"
+          node dist/cli.js @pakeArgs
 
           git checkout -- src-tauri/Cargo.lock
 
+      # --- 아티팩트 업로드 영역 ---
+
       - name: Upload DMG (macOS)
         if: runner.os == 'macOS'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.name }}-macOS
           path: ${{ inputs.name }}.dmg
@@ -220,7 +222,7 @@ jobs:
 
       - name: Upload DEB (Linux)
         if: runner.os == 'Linux'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.name }}-Linux-deb
           path: ${{ inputs.name }}.deb
@@ -229,7 +231,7 @@ jobs:
 
       - name: Upload AppImage (Linux)
         if: runner.os == 'Linux'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.name }}-Linux-AppImage
           path: ${{ inputs.name }}.AppImage
@@ -238,7 +240,7 @@ jobs:
 
       - name: Upload RPM (Linux)
         if: runner.os == 'Linux'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.name }}-Linux-rpm
           path: ${{ inputs.name }}.rpm
@@ -247,23 +249,39 @@ jobs:
 
       - name: Upload ZST (Linux)
         if: runner.os == 'Linux'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.name }}-Linux-zst
           path: ${{ inputs.name }}-*.pkg.tar.zst
           retention-days: 3
           if-no-files-found: ignore
 
-      - name: Upload MSI (Windows)
+      # Windows 무설치 단일 포터블 실행 파일 (.exe)
+      - name: Upload Portable EXE (Windows)
         if: runner.os == 'Windows'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
-          name: ${{ inputs.name }}-Windows
-          path: ${{ inputs.name }}.msi
+          name: ${{ inputs.name }}-Windows-Portable
+          path: src-tauri/target/release/${{ inputs.name }}.exe
           retention-days: 3
+          if-no-files-found: warn
+
+      # Windows 설치형 패키지 (인스톨러 / MSI / Setup)
+      - name: Upload Installer (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.name }}-Windows-Installer
+          path: |
+            ${{ inputs.name }}.msi
+            dist/${{ inputs.name }}*.exe
+            src-tauri/target/release/bundle/nsis/*-setup.exe
+            src-tauri/target/release/bundle/msi/*.msi
+          retention-days: 3
+          if-no-files-found: ignore
 
       - name: Rust cache store
-        uses: actions/cache/save@v4.2.0
+        uses: actions/cache/save@v4
         if: steps.cache_store.outputs.cache-hit != 'true'
         with:
           path: |
