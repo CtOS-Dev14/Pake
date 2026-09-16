@@ -210,23 +210,31 @@ jobs:
 
           git checkout -- src-tauri/Cargo.lock
 
-          # 순수 포터블 .exe 파일만 output_portable 폴더로 수집
+          # 임시 폴더 초기화 (이전 캐시 잔여 파일 혼입 원천 차단)
+          if (Test-Path output_portable) { Remove-Item -Recurse -Force output_portable }
           New-Item -ItemType Directory -Force -Path output_portable
 
-          # 빌드/인스톨러 폴더를 제외하고 실행 가능한 순수 .exe 탐색
-          $targetExes = Get-ChildItem -Path . -Recurse -Filter "*.exe" | Where-Object {
-            $_.FullName -notmatch 'bundle|nsis|deps|build|\.cargo|node_modules'
-          }
+          $rawName = "${{ inputs.name }}"
+          $safeName = $rawName.Trim()
 
-          Write-Host "=== Found Portable EXE ==="
-          foreach ($file in $targetExes) {
-            Write-Host $file.FullName
-            Copy-Item -Path $file.FullName -Destination output_portable\ -Force
+          # 인스톨러/시스템 캐시 폴더를 제외하고 방금 생성된 최신 바이너리 1개 추출
+          $latestExe = Get-ChildItem -Path . -Recurse -Filter "*.exe" | Where-Object {
+            $_.FullName -notmatch 'bundle|nsis|deps|build|\.cargo|node_modules'
+          } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+
+          if ($latestExe) {
+            $destPath = Join-Path "output_portable" "$safeName.exe"
+            Write-Host "Found build artifact: $($latestExe.FullName)"
+            Write-Host "Renaming and copying to: $destPath"
+            Copy-Item -Path $latestExe.FullName -Destination $destPath -Force
+          } else {
+            Write-Error "No valid standalone executable found!"
+            exit 1
           }
 
       # --- 아티팩트 업로드 영역 ---
 
-      # 수집된 단일 무설치 실행 파일 업로드
+      # 수집된 단일 무설치 포터블 실행 파일 1개만 업로드
       - name: Upload Portable EXE (Windows)
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
